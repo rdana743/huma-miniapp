@@ -6,8 +6,8 @@
 
   // ---------- хранилище (может быть недоступно — тогда просто не запоминаем) ----------
   const store = {
-    get(k, d) { try { const v = localStorage.getItem('huma:' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-    set(k, v) { try { localStorage.setItem('huma:' + k, JSON.stringify(v)); } catch {} },
+    get(k, d) { try { const v = localStorage.getItem('huma2:' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('huma2:' + k, JSON.stringify(v)); } catch {} },
   };
 
   // ---------- утилиты ----------
