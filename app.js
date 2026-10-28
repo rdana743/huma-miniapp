@@ -13,6 +13,25 @@
     set(k, v) { try { localStorage.setItem('huma2:' + k, JSON.stringify(v)); } catch {} },
   };
 
+  // ---------- аналитика: события копятся и уходят пачкой раз в 2 секунды ----------
+  const platform = TG ? 'tg' : 'max';
+  const initData = WA?.initData || '';
+  const waUser = WA?.initDataUnsafe?.user;
+  let outbox = [];
+  function track(event, props = {}) {
+    if (!C.analyticsUrl || !waUser) return; // в обычном браузере (не в мессенджере) не считаем
+    outbox.push({ event, props });
+  }
+  function flush() {
+    if (!outbox.length) return;
+    const body = JSON.stringify({ platform, initData, user: { id: waUser.id ?? waUser.user_id, name: waUser.first_name }, events: outbox.splice(0, 50) });
+    try {
+      fetch(C.analyticsUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+    } catch {}
+  }
+  setInterval(flush, 2000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+
   // ---------- утилиты ----------
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const rub = (n) => (n === 0 ? 'Бесплатно' : n == null ? 'По запросу' : n.toLocaleString('ru-RU') + ' ₽');
@@ -39,6 +58,8 @@
   // Купить: есть ссылка на оплату — платим, нет — в бота оставить заявку
   function buy(id, payUrl) {
     haptic('medium');
+    track('checkout', { id });
+    flush();
     const pending = store.get('pending', []);
     if (!pending.includes(id)) store.set('pending', [...pending, id]);
     open(payUrl || botLink('buy_' + id));
@@ -184,6 +205,7 @@
       if (step.intro) await say(esc(firstName ? `${firstName}, ${step.intro.charAt(0).toLowerCase()}${step.intro.slice(1)}` : step.intro), 700);
       await say(esc(step.q) + (step.hint ? `<span class="hint">${esc(step.hint)}</span>` : ''), 800);
       res[step.id] = await ask(step.options);
+      track('quiz_answer', { q: step.id, v: res[step.id] });
     }
 
     // «Думает»: вращающийся 3D-объект вместо простых точек
@@ -195,6 +217,7 @@
     think.remove();
 
     const rec = recommend(res);
+    track('quiz_done', { rec: rec.tariff });
     store.set('quiz', res);
     store.set('recommended', rec.tariff);
     await say(rec.text, 900);
@@ -255,7 +278,7 @@
     render(true);
     $app.onclick = (e) => {
       const t = e.target.closest('[data-tariff]');
-      if (t) { haptic(); selected = t.dataset.tariff; const y = window.scrollY; render(false); window.scrollTo(0, y); return; }
+      if (t) { haptic(); selected = t.dataset.tariff; track('tariff_select', { id: selected }); const y = window.scrollY; render(false); window.scrollTo(0, y); return; }
       if (e.target.closest('[data-buy-tariff]')) {
         const tar = C.tariffs.find((x) => x.id === selected);
         return buy('tariff_' + tar.id, tar.payUrl);
@@ -394,6 +417,7 @@
       const code = document.getElementById('promoInput').value.trim().toUpperCase();
       if (!code) return;
       const ok = C.promo[code];
+      track('promo_apply', { ok: Boolean(ok) });
       haptic(ok ? 'medium' : 'light');
       store.set('promoCode', ok ? code : null);
       pagePromo(ok
@@ -423,6 +447,7 @@
   function openItem(id) {
     const it = C.shop.flatMap((s) => s.items).find((x) => x.id === id);
     if (!it) return;
+    track('item_view', { id });
     const label = it.payUrl ? `Оплатить ${rub(it.price)}` : it.price ? 'Оформить заказ' : 'Оставить заявку';
     sheet(`
       <div class="sheet__hero ${isPhoto(it.img) ? 'sheet__hero--photo' : ''}"><img class="${isPhoto(it.img) ? '' : 'float'}" src="${it.img}" alt="" /></div>
@@ -436,6 +461,7 @@
 
   function openStory(id) {
     const s = C.stories.find((x) => x.id === id);
+    track('story_view', { id });
     const seen = store.get('seenStories', []);
     if (!seen.includes(id)) store.set('seenStories', [...seen, id]);
     sheet(`
@@ -449,6 +475,8 @@
   // ---------- навигация ----------
   function go(where) {
     window.scrollTo(0, 0);
+    if (['welcome', 'products', 'bonus', 'chat'].includes(where)) track('onboarding_step', { step: where });
+    if (where === 'offer' || where === 'offerApp') track('offer_view', { from: where === 'offerApp' ? 'app' : 'onboarding' });
     $app.onclick = route;
     switch (where) {
       case 'welcome': return screenWelcome();
@@ -465,6 +493,7 @@
 
   function showTab(t) {
     tab = t;
+    track('tab_view', { tab: t });
     window.scrollTo(0, 0);
     $app.onclick = route;
     ({ home: pageHome, shop: pageShop, me: pageMe, promo: () => pagePromo() })[t]();
@@ -480,6 +509,7 @@
     if (el.dataset.more !== undefined) {
       const a = document.querySelector(`[data-article="${el.dataset.more}"]`);
       const collapsed = a.classList.toggle('collapsed');
+      if (!collapsed) track('article_open', { i: Number(el.dataset.more) });
       el.textContent = collapsed ? 'Читать полностью' : 'Свернуть';
       return;
     }
@@ -491,5 +521,6 @@
   try { TG?.expand?.(); TG?.setHeaderColor?.('#ffffff'); TG?.setBackgroundColor?.('#ffffff'); } catch {}
   try { WA?.BackButton?.onClick?.(() => { if (!$sheet.hidden) $sheet.hidden = true; else go('app'); }); } catch {}
   $app.onclick = route;
+  track('app_open', { first: !store.get('onboarded', false) });
   go(store.get('onboarded', false) ? 'app' : 'welcome');
 })();

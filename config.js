@@ -8,7 +8,10 @@ const HUMA_CONFIG = {
   // Имя бота в MAX без @ — для кнопок «Оставить заявку»
   botUsername: 'id7203604106_1_bot',
   // Имя Telegram-бота (бот записывает его сам при запуске)
-  tgBotUsername: 'huma_tg_bot',
+  tgBotUsername: 'humamarketing_bot',
+
+  // Куда мини-приложение отправляет события для аналитики (раздел «Бот» в админке сайта)
+  analyticsUrl: 'https://huma.marketing/api/bot/events',
 
   // Сколько длится персональное предложение после опроса
   offerHours: 48,
