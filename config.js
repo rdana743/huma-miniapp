@@ -6,7 +6,9 @@
 
 const HUMA_CONFIG = {
   // Имя бота в MAX без @ — для кнопок «Оставить заявку»
-  botUsername: 'huma_bot',
+  botUsername: 'id7203604106_1_bot',
+  // Имя Telegram-бота (бот записывает его сам при запуске)
+  tgBotUsername: 'huma_tg_bot',
 
   // Сколько длится персональное предложение после опроса
   offerHours: 48,

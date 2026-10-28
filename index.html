@@ -8,7 +8,12 @@
   <meta name="theme-color" content="#ffffff" />
   <link rel="stylesheet" href="fonts/fonts.css" />
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://st.max.ru/js/max-web-app.js"></script>
+  <script>
+    // В Telegram подключаем его мост, в MAX — мост MAX
+    document.write(/tgWebAppData|tgWebAppVersion/.test(location.hash + location.search)
+      ? '<script src="https://telegram.org/js/telegram-web-app.js"><\/script>'
+      : '<script src="https://st.max.ru/js/max-web-app.js"><\/script>');
+  </script>
 </head>
 <body>
   <div id="app" class="app"></div>

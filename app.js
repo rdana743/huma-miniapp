@@ -1,7 +1,10 @@
 /* Мини-приложение Huma Marketing для MAX */
 (function () {
   const C = HUMA_CONFIG;
-  const WA = window.WebApp; // мост MAX (в обычном браузере его нет)
+  // Мост мессенджера: Telegram или MAX (в обычном браузере его нет)
+  const TG = window.Telegram?.WebApp?.initData ? window.Telegram.WebApp : null;
+  const WA = TG || window.WebApp;
+  const botLink = (payload) => TG ? `https://t.me/${C.tgBotUsername}?start=${payload}` : `https://max.ru/${C.botUsername}?start=${payload}`;
   const $app = document.getElementById('app');
 
   // ---------- хранилище (может быть недоступно — тогда просто не запоминаем) ----------
@@ -26,6 +29,7 @@
   // Открыть ссылку: оплата — во внешнем браузере, бот — внутри MAX
   function open(url) {
     try {
+      if (/^https:\/\/t\.me\//.test(url) && TG?.openTelegramLink) return TG.openTelegramLink(url);
       if (/^https:\/\/max\.ru\//.test(url) && WA?.openMaxLink) return WA.openMaxLink(url);
       if (WA?.openLink) return WA.openLink(url);
     } catch {}
@@ -37,7 +41,7 @@
     haptic('medium');
     const pending = store.get('pending', []);
     if (!pending.includes(id)) store.set('pending', [...pending, id]);
-    open(payUrl || `https://max.ru/${C.botUsername}?start=buy_${id}`);
+    open(payUrl || botLink('buy_' + id));
   }
 
   const ic = {
@@ -479,11 +483,12 @@
       el.textContent = collapsed ? 'Читать полностью' : 'Свернуть';
       return;
     }
-    if (el.hasAttribute('data-contact')) return open(`https://max.ru/${C.botUsername}?start=buy_contact`);
+    if (el.hasAttribute('data-contact')) return open(botLink('buy_contact'));
   }
 
   // ---------- старт ----------
   try { WA?.ready?.(); } catch {}
+  try { TG?.expand?.(); TG?.setHeaderColor?.('#ffffff'); TG?.setBackgroundColor?.('#ffffff'); } catch {}
   try { WA?.BackButton?.onClick?.(() => { if (!$sheet.hidden) $sheet.hidden = true; else go('app'); }); } catch {}
   $app.onclick = route;
   go(store.get('onboarded', false) ? 'app' : 'welcome');
