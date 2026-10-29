@@ -156,6 +156,7 @@
     promo: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 12.5V5a1 1 0 0 1 1-1h7.5L20 11.5 12.5 19z"/><circle cx="8.5" cy="8.5" r="1.4"/></svg>',
     key: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2"/></svg>',
     chat: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 5h14v10H10l-4 4v-4H5z"/></svg>',
+    game: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7" stroke-linecap="round"/></svg>',
     close: '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   };
 
@@ -372,10 +373,10 @@
   }
 
   // ---------- основное приложение ----------
-  let tab = 'home';
+  let tab = ['home', 'game', 'shop', 'me', 'promo'].includes(store.get('tab', 'home')) ? store.get('tab', 'home') : 'home';
 
   function shell(content) {
-    const tabs = [['home', 'Главная'], ['shop', 'Магазин'], ['me', 'Кабинет'], ['promo', 'Акции']];
+    const tabs = [['home', 'Главная'], ['game', 'Игра'], ['shop', 'Магазин'], ['me', 'Кабинет'], ['promo', 'Акции']];
     const left = offerLeft();
     $app.innerHTML = `
       <main class="page">${content}</main>
@@ -604,10 +605,11 @@
   function showTab(t) {
     tab = t;
     view = t;
+    store.set('tab', t);
     track('tab_view', { tab: t });
     window.scrollTo(0, 0);
     $app.onclick = route;
-    ({ home: pageHome, shop: pageShop, me: pageMe, promo: () => pagePromo() })[t]();
+    ({ home: pageHome, game: () => window.HUMA_GAME?.page(), shop: pageShop, me: pageMe, promo: () => pagePromo() })[t]();
   }
 
   function route(e) {
@@ -628,12 +630,22 @@
     if (el.hasAttribute('data-contact')) return open(botLink('buy_contact'));
   }
 
+  // Общие функции для game.js (вкладка «Игра»)
+  window.HUMA_CORE = {
+    C, shell, head, api, track, flush, haptic, esc, sheet, toast, store, open, botLink, reduced, ic,
+    get tab() { return tab; },
+    showTab, go, app: $app, sheetEl: $sheet,
+    user: waUser, firstName, inMessenger: !!waUser,
+    notify(kind) { try { WA?.HapticFeedback?.notificationOccurred?.(kind); } catch {} },
+  };
+
   // ---------- старт ----------
   try { WA?.ready?.(); } catch {}
   try { TG?.expand?.(); TG?.setHeaderColor?.('#ffffff'); TG?.setBackgroundColor?.('#ffffff'); } catch {}
   try { WA?.BackButton?.onClick?.(() => { if (!$sheet.hidden) $sheet.hidden = true; else go('app'); }); } catch {}
   $app.onclick = route;
   track('app_open', { first: !store.get('onboarded', false) });
-  go(store.get('onboarded', false) ? 'app' : 'welcome');
+  // Вкладка «Игра» подключается из game.js после app.js — стартуем, когда он загрузится
+  window.addEventListener('DOMContentLoaded', () => go(store.get('onboarded', false) ? 'app' : 'welcome'));
   loadCatalog();
 })();
