@@ -55,14 +55,98 @@
     window.open(url, '_blank', 'noopener');
   }
 
-  // Купить: есть ссылка на оплату — платим, нет — в бота оставить заявку
-  function buy(id, payUrl) {
+  // ---------- сайт: каталог, оплата, кабинет ----------
+  let PAY = { enabled: false, receipts: false };
+  async function api(path, body) {
+    const res = await fetch(C.apiBase + path, {
+      method: body ? 'POST' : 'GET',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify({ platform, initData, user: waUser ? { id: waUser.id ?? waUser.user_id, name: waUser.first_name } : undefined, ...body }) : undefined,
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || 'Сервер недоступен, попробуйте позже');
+    return j;
+  }
+
+  // Каталог из админки сайта. Не загрузился — работаем на данных из config.js
+  async function loadCatalog() {
+    if (!C.apiBase) return;
+    try {
+      const ctl = new AbortController();
+      setTimeout(() => ctl.abort(), 5000);
+      const res = await fetch(C.apiBase + '/catalog', { signal: ctl.signal });
+      if (!res.ok) return;
+      const d = await res.json();
+      if (d.tariffs?.length) {
+        C.tariffs = d.tariffs.map((t) => ({ id: t.id.replace(/^tariff_/, ''), slug: t.id, name: t.name, badge: t.badge, price: t.price, old: t.old, items: t.items || [], payable: t.payable }));
+      }
+      if (d.shop?.length) {
+        C.shop = d.shop.map((s) => ({ title: s.title, items: s.items.map((i) => ({ id: i.id, name: i.name, price: i.price, text: i.text, img: i.img || 'img/folder.webp', payable: i.payable })) }));
+      }
+      PAY = d.payments || PAY;
+      if (view === 'shop' || view === 'home') showTab(view);
+    } catch {}
+  }
+
+  const findItem = (id) => C.shop.flatMap((s) => s.items).find((x) => x.id === id) || C.tariffs.find((t) => (t.slug || 'tariff_' + t.id) === id);
+
+  let toastTimer = null;
+  function toast(text, ms = 3500) {
+    const t = document.getElementById('toast');
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (t.hidden = true), ms);
+  }
+
+  // «Оплатить»: заказ на сайте → оплата ЮKassa. Оплата выключена или это услуга — заявка в боте, как раньше
+  function buy(id) {
     haptic('medium');
     track('checkout', { id });
     flush();
-    const pending = store.get('pending', []);
-    if (!pending.includes(id)) store.set('pending', [...pending, id]);
-    open(payUrl || botLink('buy_' + id));
+    const item = findItem(id);
+    if (!PAY.enabled || !item?.payable || !C.apiBase || !waUser) {
+      const pending = store.get('pending', []);
+      if (!pending.includes(id)) store.set('pending', [...pending, id]);
+      return open(botLink('buy_' + id));
+    }
+    if (PAY.receipts && !store.get('email', '')) return askEmail(id);
+    return pay(id, store.get('email', ''));
+  }
+
+  async function pay(id, email) {
+    toast('Готовим оплату…', 10000);
+    try {
+      const r = await api('/orders', { productId: id, email: email || undefined });
+      if (r.mode === 'pay') {
+        toast('Открываем оплату. Доступ придёт в бот сразу после оплаты', 6000);
+        open(r.url);
+      } else {
+        open(botLink('buy_' + id));
+      }
+    } catch (e) {
+      toast(e.message, 5000);
+    }
+  }
+
+  function askEmail(id) {
+    const item = findItem(id);
+    sheet(`
+      <h2 class="t-h1">Почта для чека</h2>
+      <p class="t-lead">После оплаты пришлём на неё чек. ${item ? `${esc(item.name)} — ${rub(item.price)}` : ''}</p>
+      <form class="field" id="emailForm" style="flex-direction:column">
+        <input id="emailInput" type="email" inputmode="email" autocomplete="email" placeholder="name@company.ru" required style="text-transform:none;min-height:52px;padding:0 16px;border-radius:12px;border:1px solid #d9d9d9;font-size:17px;width:100%;box-sizing:border-box" />
+        <button class="btn btn--red btn--shine" type="submit">Перейти к оплате</button>
+      </form>
+      <p class="t-small">Оплата через ЮKassa: карта, СБП, SberPay.</p>`);
+    document.getElementById('emailForm').onsubmit = (e) => {
+      e.preventDefault();
+      const v = document.getElementById('emailInput').value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return toast('Проверьте почту');
+      store.set('email', v);
+      $sheet.hidden = true;
+      pay(id, v);
+    };
   }
 
   const ic = {
@@ -237,7 +321,7 @@
   }
 
   function screenOffer(fromApp) {
-    const rec = store.get('recommended', 'pro');
+    const rec = C.tariffs.some((t) => t.id === store.get('recommended', 'pro')) ? store.get('recommended', 'pro') : C.tariffs[0].id;
     let selected = rec;
     const render = (first) => {
       $app.innerHTML = `
@@ -281,7 +365,7 @@
       if (t) { haptic(); selected = t.dataset.tariff; track('tariff_select', { id: selected }); const y = window.scrollY; render(false); window.scrollTo(0, y); return; }
       if (e.target.closest('[data-buy-tariff]')) {
         const tar = C.tariffs.find((x) => x.id === selected);
-        return buy('tariff_' + tar.id, tar.payUrl);
+        return buy(tar.slug || 'tariff_' + tar.id);
       }
       route(e);
     };
@@ -359,11 +443,10 @@
     `);
   }
 
+  const DATE = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
+
   function pageMe() {
-    const pending = store.get('pending', []);
-    const all = [...C.shop.flatMap((s) => s.items), ...C.tariffs.map((t) => ({ id: 'tariff_' + t.id, name: 'Тариф ' + t.name, img: 'img/coins.webp' }))];
-    const list = pending.map((id) => all.find((x) => x.id === id)).filter(Boolean);
-    shell(`
+    const cabinet = (body) => shell(`
       ${head()}
       <div class="cabinet on-dark">
         <span class="t-h1">Кабинет</span>
@@ -374,18 +457,45 @@
         <span class="row-btn__icon row-btn__icon--red">${ic.chat}</span>
         <span><b>Написать менеджеру</b><span class="t-small">Вопросы по оплате и доступам</span></span>
       </button>
+      ${body}`);
+    const empty = `
       <h2 class="t-h2">Мои покупки</h2>
-      ${list.length ? list.map((it) => `
+      <div class="empty">
+        <img class="float" src="img/folder.webp" alt="" />
+        <p>Покупок пока нет. Гайды — от 790 ₽, а первый месяц работы агентства — бесплатно.</p>
+        <button class="btn" data-tab="shop">Открыть магазин</button>
+      </div>`;
+
+    // Без сайта или вне мессенджера — то, что запомнили на этом устройстве
+    if (!C.apiBase || !waUser) {
+      const pending = store.get('pending', []).map((id) => findItem(id)).filter(Boolean);
+      return cabinet(pending.length ? `<h2 class="t-h2">Мои заявки</h2>` + pending.map((it) => `
         <div class="row-btn">
-          <span class="row-btn__icon"><img src="${it.img}" alt="" /></span>
-          <span><b>${esc(it.name)}</b><span class="t-small">Доступ откроется после подтверждения оплаты — пришлём в бот</span></span>
-        </div>`).join('') : `
-        <div class="empty">
-          <img class="float" src="img/folder.webp" alt="" />
-          <p>Покупок пока нет. Гайды — от 790 ₽, а первый месяц работы агентства — бесплатно.</p>
-          <button class="btn" data-tab="shop">Открыть магазин</button>
-        </div>`}
-    `);
+          <span class="row-btn__icon"><img src="${it.img || 'img/coins.webp'}" alt="" /></span>
+          <span><b>${esc(it.name)}</b><span class="t-small">Менеджер свяжется с вами в боте</span></span>
+        </div>`).join('') : empty);
+    }
+
+    cabinet(`<h2 class="t-h2">Мои покупки</h2><p class="t-small">Загружаем…</p>`);
+    api('/me', {})
+      .then((d) => {
+        if (tab !== 'me') return;
+        const club = d.club
+          ? `<div class="row-btn">
+              <span class="row-btn__icon row-btn__icon--red">${ic.key}</span>
+              <span><b>HUMA Club ${d.club.active ? 'активен' : 'закончился'}</b>
+              <span class="t-small">${d.club.active ? `Доступ до ${DATE.format(new Date(d.club.until))}. Приглашение в канал — в боте` : 'Продлите подписку, чтобы вернуться в канал'}</span></span>
+            </div>`
+          : '';
+        const list = d.purchases.map((p) => `
+          <div class="row-btn" style="grid-template-columns:48px 1fr auto">
+            <span class="row-btn__icon"><img src="${esc(p.img || 'img/coins.webp')}" alt="" /></span>
+            <span><b>${esc(p.name)}</b><span class="t-small">${p.paidAt ? 'Оплачено ' + DATE.format(new Date(p.paidAt)) : ''} · ${rub(p.amount)}</span></span>
+            ${p.fileUrl ? `<button class="btn btn--red" style="min-height:40px;padding:0 14px;font-size:15px" data-file="${esc(p.fileUrl)}">Скачать</button>` : ''}
+          </div>`).join('');
+        cabinet(d.purchases.length || club ? `${club}<h2 class="t-h2">Мои покупки</h2>${list || '<p class="t-small">Пока только клуб.</p>'}` : empty);
+      })
+      .catch((e) => tab === 'me' && cabinet(`<h2 class="t-h2">Мои покупки</h2><p class="t-small">${esc(e.message)}</p>`));
   }
 
   function pagePromo(result) {
@@ -437,10 +547,7 @@
   $sheet.addEventListener('click', (e) => {
     if (e.target.closest('[data-close]')) $sheet.hidden = true;
     const b = e.target.closest('[data-buy]');
-    if (b) {
-      const it = C.shop.flatMap((s) => s.items).find((x) => x.id === b.dataset.buy);
-      buy(it.id, it.payUrl);
-    }
+    if (b) buy(b.dataset.buy);
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $sheet.hidden = true; });
 
@@ -448,14 +555,15 @@
     const it = C.shop.flatMap((s) => s.items).find((x) => x.id === id);
     if (!it) return;
     track('item_view', { id });
-    const label = it.payUrl ? `Оплатить ${rub(it.price)}` : it.price ? 'Оформить заказ' : 'Оставить заявку';
+    const online = PAY.enabled && it.payable;
+    const label = online ? `Оплатить ${rub(it.price)}` : it.price ? 'Оформить заказ' : 'Оставить заявку';
     sheet(`
       <div class="sheet__hero ${isPhoto(it.img) ? 'sheet__hero--photo' : ''}"><img class="${isPhoto(it.img) ? '' : 'float'}" src="${it.img}" alt="" /></div>
       <h2 class="t-h1">${esc(it.name)}</h2>
       <div class="sheet__price ${it.price === 0 ? 'red' : ''}">${rub(it.price)}</div>
       <p class="t-lead">${esc(it.text)}</p>
       <button class="btn btn--red btn--shine" data-buy="${it.id}">${label}</button>
-      <p class="t-small">${it.payUrl ? 'Оплата откроется в браузере. Доступ пришлём в бот.' : 'Откроется чат с ботом — менеджер свяжется с вами.'}</p>
+      <p class="t-small">${online ? 'Оплата через ЮKassa: карта, СБП, SberPay. Доступ придёт в бот сразу после оплаты.' : 'Откроется чат с ботом — менеджер свяжется с вами.'}</p>
     `);
   }
 
@@ -475,6 +583,7 @@
   // ---------- навигация ----------
   function go(where) {
     window.scrollTo(0, 0);
+    view = where;
     if (['welcome', 'products', 'bonus', 'chat'].includes(where)) track('onboarding_step', { step: where });
     if (where === 'offer' || where === 'offerApp') track('offer_view', { from: where === 'offerApp' ? 'app' : 'onboarding' });
     $app.onclick = route;
@@ -491,8 +600,10 @@
     }
   }
 
+  let view = 'welcome';
   function showTab(t) {
     tab = t;
+    view = t;
     track('tab_view', { tab: t });
     window.scrollTo(0, 0);
     $app.onclick = route;
@@ -500,8 +611,9 @@
   }
 
   function route(e) {
-    const el = e.target.closest('[data-go],[data-tab],[data-item],[data-story],[data-more],[data-contact]');
+    const el = e.target.closest('[data-go],[data-tab],[data-item],[data-story],[data-more],[data-contact],[data-file]');
     if (!el) return;
+    if (el.dataset.file) return open(el.dataset.file);
     if (el.dataset.go) { haptic(); return go(el.dataset.go); }
     if (el.dataset.tab) { haptic(); return showTab(el.dataset.tab); }
     if (el.dataset.item) return openItem(el.dataset.item);
@@ -523,4 +635,5 @@
   $app.onclick = route;
   track('app_open', { first: !store.get('onboarded', false) });
   go(store.get('onboarded', false) ? 'app' : 'welcome');
+  loadCatalog();
 })();
