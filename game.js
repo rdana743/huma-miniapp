@@ -221,6 +221,7 @@
 
   function levelsSheet() {
     const p = S.profile;
+    if (!S.levels) return;
     H.sheet(`
       <h2 class="t-h1">Уровни</h2>
       <p class="t-lead">${fmt(p.xp)} опыта. ${p.level.next ? `До «${esc(p.level.nextTitle)}» — ${fmt(p.level.next - p.xp)}` : 'Вы на вершине!'}</p>
