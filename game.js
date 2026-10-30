@@ -919,8 +919,21 @@
   async function checkInvite() {
     if (!H.inMessenger) return;
     try {
+      const firstTime = !store.get('onboarded', false);
       const r = await call('invite');
       const inv = r?.invite;
+      // Пришёл по ссылке друга или дуэли — пропускаем знакомство с приложением и ведём сразу в игру
+      if (r?.entry && firstTime && !L) {
+        store.set('onboarded', true);
+        H.showTab('game');
+        if (!inv && r.entry.kind === 'ref' && !store.get('refWelcome', false)) {
+          store.set('refWelcome', true);
+          H.sheet(`<div class="g-duel-big">🎁</div><h2 class="t-h1">${esc(r.entry.from)} зовёт вас в игру</h2>
+            <p class="t-lead">Маркетинг по 2 минуты в день: уроки, опыт, серия дней и топ недели. После первого урока — <b>+${r.entry.bonus} опыта</b> в подарок, а ${esc(r.entry.from)} получит награду за приглашение.</p>
+            <button class="btn btn--red btn--shine" data-close>Начать</button>`);
+          return;
+        }
+      }
       if (!inv || store.get('duelSeen', '') === inv.code || L) return;
       store.set('duelSeen', inv.code);
       H.sheet(`<div class="g-duel-big">⚔️</div><h2 class="t-h1">${esc(inv.from)} вызывает вас на дуэль</h2>
@@ -933,7 +946,7 @@
       };
     } catch {}
   }
-  setTimeout(checkInvite, 1200);
+  setTimeout(checkInvite, 0);
 
   window.HUMA_GAME = { page };
 })();
