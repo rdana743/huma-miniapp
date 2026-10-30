@@ -76,100 +76,203 @@
     return null;
   }
 
-  function renderHome() {
+  // ---------- главный экран: «Сегодня» + плитки разделов ----------
+  let openUnit = null; // открытый экран раздела (id) — возвращаемся в него после урока
+
+  const unitIndex = (id) => S.units.findIndex((u) => u.id === id);
+  const seenDuels = () => store.get('duelsSeen', []);
+  const newDuelResults = () => (S.duels?.list || []).filter((d) => d.result !== 'waiting' && !seenDuels().includes(d.code));
+  const gotAch = () => S.achievements.filter((a) => a.got).length;
+  const achDot = () => Math.max(0, gotAch() - store.get('achSeen', 0));
+
+  function topBar() {
+    const p = S.profile;
+    const duelDot = (S.duels?.invite ? 1 : 0) + newDuelResults().length;
+    const dot = (n) => (n ? `<em>${n > 9 ? '9+' : n}</em>` : '');
+    return `
+      <div class="g-top">
+        <div class="g-stats">
+          <span class="g-chip ${p.playedToday ? 'is-hot' : ''}" title="Серия дней">${icon.flame}<b>${p.streak}</b></span>
+          <span class="g-chip g-chip--xp" title="Опыт">${icon.bolt}<b>${fmt(p.xp)}</b></span>
+          ${p.freezes ? `<button class="g-chip g-chip--ice" data-g="freeze" title="Заморозки серии">${icon.snow}<b>${p.freezes}</b></button>` : ''}
+        </div>
+        <div class="g-icons">
+          <button data-g="duels" aria-label="Дуэли">⚔️${dot(duelDot)}</button>
+          <button data-g="board" aria-label="Топ недели">🏆</button>
+          <button data-g="profile" aria-label="Уровень и награды">🎖${dot(achDot())}</button>
+        </div>
+      </div>`;
+  }
+
+  function heroCard() {
     const p = S.profile;
     const lv = p.level;
     const lvPct = lv.next ? Math.round(((p.xp - lv.from) / (lv.next - lv.from)) * 100) : 100;
     const goalPct = Math.min(100, Math.round((p.todayXp / p.goal) * 100));
+    const R = 26, C = 2 * Math.PI * R;
     const next = nextLesson();
-    const R = 26, L = 2 * Math.PI * R;
-
-    H.shell(`
-      ${H.head()}
-      ${inviteCard()}
-      <div class="g-stats">
-        <span class="g-chip ${p.playedToday ? 'is-hot' : ''}" title="Серия дней">${icon.flame}<b>${p.streak}</b></span>
-        <span class="g-chip g-chip--xp" title="Опыт">${icon.bolt}<b>${fmt(p.xp)}</b></span>
-        ${p.freezes ? `<button class="g-chip g-chip--ice" data-g="freeze" title="Заморозки серии">${icon.snow}<b>${p.freezes}</b></button>` : ''}
-        <button class="g-chip g-chip--lv" data-g="levels"><b>${esc(lv.title)}</b></button>
-      </div>
-
+    const u = next ? S.units.find((x) => x.lessons.some((l) => l.id === next.id)) : null;
+    const k = u ? u.lessons.findIndex((l) => l.id === next.id) + 1 : 0;
+    return `
       <section class="g-hero on-dark">
         <div class="g-hero__top">
           <div>
-            <span class="t-small">Уровень ${lv.index + 1} · ${esc(p.trackTitle)}</span>
-            <h2 class="t-h1">${esc(lv.title)}</h2>
+            <span class="t-small">${next ? `${esc(u.title)} · урок ${k} из ${u.lessons.length}` : 'Все уроки пройдены'}</span>
+            <h2 class="t-h2 g-hero__title">${next ? esc(next.title) : 'Вы прошли весь путь!'}</h2>
           </div>
           <div class="g-ring ${goalPct >= 100 ? 'is-done' : ''}" aria-label="Цель дня ${p.todayXp} из ${p.goal} опыта">
-            <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="${R}" class="g-ring__bg"/><circle cx="32" cy="32" r="${R}" class="g-ring__fg" style="stroke-dasharray:${L};stroke-dashoffset:${L * (1 - goalPct / 100)}"/></svg>
+            <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="${R}" class="g-ring__bg"/><circle cx="32" cy="32" r="${R}" class="g-ring__fg" style="stroke-dasharray:${C};stroke-dashoffset:${C * (1 - goalPct / 100)}"/></svg>
             <span>${goalPct >= 100 ? icon.check : `<b>${p.todayXp}</b><small>/${p.goal}</small>`}</span>
           </div>
         </div>
-        <div class="g-bar"><i style="width:${lvPct}%"></i></div>
-        <p class="g-hero__hint">${lv.next ? `${fmt(p.xp - lv.from)} из ${fmt(lv.next - lv.from)} опыта до уровня «${esc(lv.nextTitle)}»` : 'Максимальный уровень. Вы легенда!'}</p>
-        <p class="g-hero__goal">${goalPct >= 100 ? 'Цель дня выполнена 🎉' : p.playedToday ? `Цель дня: ещё ${p.goal - p.todayXp} опыта` : p.streak ? `Пройдите урок, чтобы серия ${p.streak} ${plural(p.streak, 'день', 'дня', 'дней')} не сгорела` : 'Цель дня: 30 опыта — примерно один урок'}</p>
         ${next
-          ? `<button class="btn btn--red btn--shine" data-lesson="${next.id}">${p.xp ? 'Продолжить' : 'Начать'}: ${esc(next.title)}</button>`
-          : '<button class="btn btn--white" data-g="tracks">Все уроки пройдены — сменить путь</button>'}
-      </section>
+          ? `<button class="btn btn--red btn--shine" data-lesson="${next.id}">${p.xp ? 'Продолжить' : 'Начать первый урок'}</button>`
+          : '<button class="btn btn--white" data-g="tracks">Сменить путь</button>'}
+        <button class="g-hero__lv" data-g="levels">
+          <span><b>${esc(lv.title)}</b>${lv.next ? ` → ${esc(lv.nextTitle)}` : ''}</span>
+          <span class="g-bar"><i style="width:${lvPct}%"></i></span>
+          <small>${lv.next ? `${fmt(p.xp - lv.from)}/${fmt(lv.next - lv.from)}` : 'макс.'}</small>
+        </button>
+      </section>`;
+  }
 
-      ${pollCard()}
+  // Лента «Сегодня»: что важно сейчас — первым
+  function laneCards() {
+    const p = S.profile;
+    const cards = [];
+    const inv = S.duels?.invite;
+    if (inv) cards.push(`<button class="g-lc g-lc--dark" data-duel-accept="${inv.code}"><span class="g-lc__e">⚔️</span><b>${esc(inv.from)} вызывает на дуэль</b><small>${inv.correct}/${inv.size} за ${mmss(inv.ms)}</small><span class="g-lc__btn">Принять</span></button>`);
+    for (const d of newDuelResults().slice(0, 2)) {
+      const t = { win: 'Вы победили', lose: 'Дуэль проиграна', draw: 'Ничья' }[d.result];
+      cards.push(`<button class="g-lc ${d.result === 'win' ? 'g-lc--win' : ''}" data-g="duels"><span class="g-lc__e">${d.result === 'win' ? '🏆' : '⚔️'}</span><b>${t}</b><small>${esc(d.rival || '')} · ${d.my} : ${d.their}</small><span class="g-lc__btn">${d.result === 'lose' ? 'Реванш' : 'Смотреть'}</span></button>`);
+    }
+    if (p.streak && !p.playedToday) cards.push(`<button class="g-lc g-lc--fire" data-lesson="${nextLesson()?.id || ''}"><span class="g-lc__e">🔥</span><b>Серия ${p.streak} ${plural(p.streak, 'день', 'дня', 'дней')} под угрозой</b><small>Один урок — 2 минуты</small><span class="g-lc__btn">Спасти</span></button>`);
+    if (S.poll && (S.poll.voted === null || S.poll.voted === undefined)) cards.push(`<button class="g-lc" data-g="poll"><span class="g-lc__e">📊</span><b>Опрос дня</b><small>${esc(S.poll.question)}</small><span class="g-lc__btn">Ответить · +15⚡</span></button>`);
+    const cert = S.units.find((u) => u.complete && !store.get('certSeen', []).includes(u.id));
+    if (cert && S.referral?.code) cards.push(`<button class="g-lc" data-cert="${cert.id}"><span class="g-lc__e">🎓</span><b>Сертификат готов</b><small>«${esc(cert.title)}» — для сторис</small><span class="g-lc__btn">Открыть</span></button>`);
+    if (!(S.duels?.list || []).length) cards.push(`<button class="g-lc" data-g="duel"><span class="g-lc__e">⚔️</span><b>Вызовите коллегу</b><small>5 вопросов на скорость, победителю +50⚡</small><span class="g-lc__btn">Сыграть</span></button>`);
+    if (S.referral?.code) cards.push(`<button class="g-lc" data-g="ref"><span class="g-lc__e">🎁</span><b>Позовите друга</b><small>+${S.referral.reward.referrer}⚡ и заморозка серии</small><span class="g-lc__btn">Пригласить</span></button>`);
+    if (S.poll && S.poll.voted !== null && S.poll.voted !== undefined) cards.push(`<button class="g-lc" data-g="poll"><span class="g-lc__e">📊</span><b>Итоги опроса</b><small>${esc(S.poll.question)}</small><span class="g-lc__btn">Смотреть</span></button>`);
+    return cards;
+  }
 
-      <div class="g-path">
-        ${S.units.map((u, ui) => {
-          const doneN = u.lessons.filter((l) => l.done).length;
-          return `
-          <section class="g-unit ${u.complete ? 'is-done' : ''}">
-            <header class="g-unit__head">
-              <img src="${u.img}" alt="" />
-              <span><span class="t-small">Раздел ${ui + 1} · ${doneN} из ${u.lessons.length}</span><b>${esc(u.title)}</b><span class="g-unit__desc">${esc(u.desc)}</span></span>
-              ${u.complete && S.referral?.code ? `<button class="g-unit__cert" data-cert="${u.id}" aria-label="Сертификат">🎓</button>` : ''}
-            </header>
-            <div class="g-nodes">
-              ${u.lessons.map((l, i) => {
-                const cur = next && next.id === l.id;
-                const cls = l.done ? `is-done${l.best === l.size ? ' is-perfect' : ''}` : cur ? 'is-current' : l.locked ? 'is-locked' : '';
-                const perfect = l.done && l.best === l.size;
-                return `
-                <div class="g-node-wrap" style="--x:${[0, 46, -46][i % 3]}px">
-                  ${cur ? '<span class="g-node__bubble">Старт</span>' : ''}
-                  <button class="g-node ${cls}" ${l.locked ? 'disabled' : ''} data-lesson="${l.id}" aria-label="${esc(l.title)}">
-                    ${l.done ? (perfect ? icon.star : icon.check) : l.locked ? icon.lock : icon.star}
-                  </button>
-                  <span class="g-node__title">${esc(l.title)}${l.done ? `<small>${l.best}/${l.size}</small>` : ''}</span>
-                </div>`;
-              }).join('')}
-            </div>
-          </section>`;
-        }).join('')}
+  function unitTile(u) {
+    const done = u.lessons.filter((l) => l.done).length;
+    const total = u.lessons.length;
+    const next = nextLesson();
+    const cur = next && u.lessons.some((l) => l.id === next.id);
+    const locked = !u.lessons.some((l) => !l.locked);
+    const state = u.complete ? 'done' : cur ? 'cur' : locked ? 'lock' : 'open';
+    const R = 15, C = 2 * Math.PI * R;
+    return `
+      <button class="g-utile is-${state}" data-unit="${u.id}">
+        <img src="${u.img}" alt="" />
+        <b>${esc(u.title)}</b>
+        <span class="g-utile__p">
+          <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="${R}" fill="none" stroke="#e5e5e5" stroke-width="4"/><circle cx="18" cy="18" r="${R}" fill="none" stroke="${u.complete ? 'var(--ok)' : 'var(--red)'}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - done / total)}" transform="rotate(-90 18 18)"/></svg>
+          ${done}/${total}
+        </span>
+        ${state === 'done' ? `<i class="g-utile__ok">${icon.check}</i>` : state === 'lock' ? `<i class="g-utile__lock">${icon.lock}</i>` : ''}
+      </button>`;
+  }
+
+  function renderHome() {
+    if (openUnit && unitIndex(openUnit) >= 0) return renderUnit(openUnit);
+    const p = S.profile;
+    const cards = laneCards();
+    const doneUnits = S.units.filter((u) => u.complete).length;
+    H.shell(`
+      ${H.head()}
+      ${inviteCard()}
+      ${topBar()}
+      ${heroCard()}
+      ${cards.length ? `
+        <div class="h-row"><h2 class="t-h2">Сегодня</h2>${cards.length > 1 ? '<span class="t-small">листайте →</span>' : ''}</div>
+        <div class="g-lane">${cards.join('')}</div>` : ''}
+      <div class="h-row"><h2 class="t-h2">Разделы</h2><span class="t-small">${doneUnits} из ${S.units.length} пройдены</span></div>
+      <div class="g-grid">${S.units.map(unitTile).join('')}</div>
+      <div class="g-links">
+        <button data-g="board">🏆 <span>Топ недели</span><b>${S.board.me ? `вы на ${S.board.me.place} месте` : 'сыграйте урок'}</b></button>
+        <button data-g="profile">🎖 <span>Уровень и награды</span><b>${gotAch()} из ${S.achievements.length}</b></button>
+        <button data-g="tracks">🧭 <span>Путь</span><b>${esc(p.trackTitle)}</b></button>
       </div>
-
-      ${duelCard()}
-
-      ${refCard()}
-
-      <section class="g-card">
-        <div class="h-row"><h2 class="t-h2">Топ недели</h2><span class="t-small">сброс в понедельник</span></div>
-        ${S.board.top.length
-          ? `<ol class="g-board">${S.board.top.map((r) => `
-              <li class="${r.me ? 'is-me' : ''}"><span class="g-board__place p${r.place}">${r.place}</span><span class="g-board__name">${esc(r.name)}${r.me ? ' · вы' : ''}</span><b>${fmt(r.xp)}</b></li>`).join('')}</ol>
-             ${S.board.me && S.board.me.place > 10 ? `<p class="g-board__me">Вы на ${S.board.me.place} месте · ${fmt(S.board.me.xp)} опыта</p>` : ''}`
-          : '<p class="t-lead">На этой неделе ещё никто не играл. Пройдите урок — и вы первый.</p>'}
-      </section>
-
-      <section class="g-card">
-        <div class="h-row"><h2 class="t-h2">Достижения</h2><span class="t-small">${S.achievements.filter((a) => a.got).length} из ${S.achievements.length}</span></div>
-        <div class="g-ach">
-          ${S.achievements.map((a) => `
-            <button class="g-badge ${a.got ? 'is-got' : ''}" data-ach="${a.key}">
-              <span class="g-badge__icon">${a.icon}</span><span>${esc(a.title)}</span>
-            </button>`).join('')}
-        </div>
-      </section>
-
-      <button class="g-switch" data-g="tracks">Путь: <b>${esc(p.trackTitle)}</b> · сменить</button>
     `);
     bind();
+  }
+
+  // Экран раздела: дорожка уроков как в Duolingo
+  function renderUnit(id) {
+    const ui = unitIndex(id);
+    const u = S.units[ui];
+    openUnit = id;
+    const next = nextLesson();
+    const doneN = u.lessons.filter((l) => l.done).length;
+    const prevUnit = S.units[ui - 1];
+    H.shell(`
+      <button class="g-back" data-g="units">${icon.left}Все разделы</button>
+      <section class="g-unitbig on-dark">
+        <img src="${u.img}" alt="" />
+        <div><span class="t-small">Раздел ${ui + 1} · ${doneN} из ${u.lessons.length}</span><h1 class="t-h1">${esc(u.title)}</h1><p>${esc(u.desc)}</p></div>
+      </section>
+      <div class="g-nodes g-nodes--big">
+        ${u.lessons.map((l, i) => {
+          const cur = next && next.id === l.id;
+          const perfect = l.done && l.best === l.size;
+          const cls = l.done ? `is-done${perfect ? ' is-perfect' : ''}` : cur ? 'is-current' : l.locked ? 'is-locked' : '';
+          return `
+          <div class="g-node-wrap" style="--x:${[0, 52, -52][i % 3]}px">
+            ${cur ? '<span class="g-node__bubble">Старт</span>' : ''}
+            <button class="g-node ${cls}" ${l.locked ? 'disabled' : ''} data-lesson="${l.id}" aria-label="${esc(l.title)}">
+              ${l.done ? (perfect ? icon.star : icon.check) : l.locked ? icon.lock : icon.star}
+            </button>
+            <span class="g-node__title">${esc(l.title)}${l.done ? `<small>${l.best}/${l.size}</small>` : ''}</span>
+          </div>`;
+        }).join('')}
+      </div>
+      ${u.complete && S.referral?.code
+        ? `<button class="btn btn--red" data-cert="${u.id}">🎓 Сертификат за раздел</button>`
+        : u.lessons.every((l) => l.locked)
+          ? `<div class="g-hint">🔒 Откроется после раздела «${esc(prevUnit?.title || '')}»</div>`
+          : `<div class="g-hint">🎓 Пройдите все ${u.lessons.length} урока — получите сертификат для сторис</div>`}
+      ${S.units[ui + 1] ? `<button class="g-nextunit" data-unit="${S.units[ui + 1].id}"><span>Следующий раздел</span><b>${esc(S.units[ui + 1].title)}</b>${icon.right}</button>` : ''}
+    `);
+    window.scrollTo(0, 0);
+    bind();
+  }
+
+  // ---------- шторки ----------
+  function boardSheet() {
+    H.sheet(`
+      <h2 class="t-h1">Топ недели</h2>
+      <p class="t-lead">Опыт с понедельника. В понедельник всё обнуляется — шанс есть у каждого.</p>
+      ${S.board.top.length
+        ? `<ol class="g-board">${S.board.top.map((r) => `<li class="${r.me ? 'is-me' : ''}"><span class="g-board__place p${r.place}">${r.place}</span><span class="g-board__name">${esc(r.name)}${r.me ? ' · вы' : ''}</span><b>${fmt(r.xp)}</b></li>`).join('')}</ol>
+           ${S.board.me && S.board.me.place > 10 ? `<p class="g-board__me">Вы на ${S.board.me.place} месте · ${fmt(S.board.me.xp)} опыта</p>` : ''}`
+        : '<p class="t-lead">На этой неделе ещё никто не играл. Пройдите урок — и вы первый.</p>'}
+      <button class="btn" data-g="duel">⚔️ Вызвать коллегу и обогнать</button>`);
+  }
+
+  function profileSheet() {
+    store.set('achSeen', gotAch());
+    const p = S.profile;
+    const certs = S.units.filter((u) => u.complete);
+    H.sheet(`
+      <h2 class="t-h1">Уровень и награды</h2>
+      <button class="g-lvcard" data-g="levels">
+        <span><small>Уровень ${p.level.index + 1} из ${S.levels?.length || 15}</small><b>${esc(p.level.title)}</b></span>
+        <span class="g-bar"><i style="width:${p.level.next ? Math.round(((p.xp - p.level.from) / (p.level.next - p.level.from)) * 100) : 100}%"></i></span>
+        <small>${p.level.next ? `до «${esc(p.level.nextTitle)}» — ${fmt(p.level.next - p.xp)} опыта · все уровни ›` : 'Максимальный уровень'}</small>
+      </button>
+      <div class="h-row"><h3 class="t-h2">Достижения</h3><span class="t-small">${gotAch()} из ${S.achievements.length}</span></div>
+      <div class="g-ach">${S.achievements.map((a) => `<button class="g-badge ${a.got ? 'is-got' : ''}" data-ach="${a.key}"><span class="g-badge__icon">${a.icon}</span><span>${esc(a.title)}</span></button>`).join('')}</div>
+      ${certs.length && S.referral?.code ? `<div class="h-row"><h3 class="t-h2">Сертификаты</h3><span class="t-small">${certs.length}</span></div>
+        <div class="g-certs">${certs.map((u) => `<button data-cert="${u.id}">🎓 <span>${esc(u.title)}</span>${icon.right}</button>`).join('')}</div>` : ''}
+      <button class="g-switch" data-g="tracks">Путь: <b>${esc(p.trackTitle)}</b> · сменить</button>`);
+  }
+
+  function duelsSheet() {
+    store.set('duelsSeen', [...new Set([...seenDuels(), ...(S.duels?.list || []).filter((d) => d.result !== 'waiting').map((d) => d.code)])].slice(-50));
+    H.sheet(`${inviteCard()}${duelCard()}`);
   }
 
   // ---------- ссылки на бота ----------
@@ -319,6 +422,7 @@
     if (!u || !S.referral?.code) return;
     const url = certUrl(unitId);
     track('game_cert', { unit: unitId });
+    store.set('certSeen', [...new Set([...store.get('certSeen', []), unitId])]);
     const tg = H.tg;
     H.sheet(`
       <h2 class="t-h1">Сертификат</h2>
@@ -447,8 +551,9 @@
       S.poll = { ...S.poll, ...r };
       if (r.xp) { S.profile.xp += r.xp; S.profile.todayXp += r.xp; }
       renderHome();
-      if (r.xp) floatXp(r.xp, document.querySelector('.g-poll'));
-      showAchievements(r.achievements);
+      H.sheet(pollCard());
+      if (r.xp) floatXp(r.xp, H.sheetEl.querySelector('.g-poll'));
+      if (r.achievements?.length) setTimeout(() => showAchievements(r.achievements), 1500);
     } catch (e) {
       H.toast(e.message);
       renderHome();
@@ -466,17 +571,26 @@
 
   // ---------- события ----------
   function bind() {
-    H.app.onclick = (e) => {
-      const t = e.target.closest('[data-track],[data-lesson],[data-g],[data-vote],[data-pollview],[data-ach],[data-tab],[data-duel-accept],[data-duel-share],[data-cert]');
+    H.app.onclick = dispatch;
+  }
+  // Шторка живёт вне #app — вешаем тот же обработчик один раз
+  H.sheetEl.addEventListener('click', (e) => { if (H.tab === 'game' && !L) dispatch(e, true); });
+
+  function dispatch(e, inSheet = false) {
+    {
+      const t = e.target.closest('[data-track],[data-lesson],[data-g],[data-vote],[data-pollview],[data-ach],[data-tab],[data-duel-accept],[data-duel-share],[data-cert],[data-unit]');
       if (!t) return;
+      const close = () => { if (inSheet && !t.dataset.vote && !t.dataset.pollview) H.sheetEl.hidden = true; };
+      close();
       if (t.dataset.tab) { haptic(); return H.showTab(t.dataset.tab); }
+      if (t.dataset.unit) { haptic(); return renderUnit(t.dataset.unit); }
       if (t.dataset.track) return chooseTrack(t.dataset.track);
       if (t.dataset.duelAccept) return duelAccept(t.dataset.duelAccept);
       if (t.dataset.duelShare) return shareLink(botLink(`duel_${t.dataset.duelShare}`), `Вызываю на дуэль по маркетингу: у меня ${t.dataset.duelScore} из 5. Сможешь лучше?`, { name: 'game_invite', props: { via: 'duel' } });
       if (t.dataset.cert) return certSheet(t.dataset.cert);
       if (t.dataset.lesson && !t.disabled) return startLesson(t.dataset.lesson);
       if (t.dataset.vote !== undefined) return vote(Number(t.dataset.vote));
-      if (t.dataset.pollview) { pollMine = t.dataset.pollview === 'mine'; return renderHome(); }
+      if (t.dataset.pollview) { pollMine = t.dataset.pollview === 'mine'; return H.sheet(pollCard()); }
       if (t.dataset.ach) {
         const a = S.achievements.find((x) => x.key === t.dataset.ach);
         return H.sheet(`<div class="g-ach-big ${a.got ? 'is-got' : ''}"><span>${a.icon}</span></div><h2 class="t-h1">${esc(a.title)}</h2><p class="t-lead">${esc(a.desc)}</p><p class="t-small">${a.got ? 'Получено' : 'Ещё не получено'}</p><button class="btn" data-close>Понятно</button>`);
@@ -487,6 +601,12 @@
       if (g === 'home') return renderHome();
       if (g === 'levels') return levelsSheet();
       if (g === 'duel') return duelStart();
+      if (g === 'units') { openUnit = null; window.scrollTo(0, 0); return renderHome(); }
+      if (g === 'duels') return duelsSheet();
+      if (g === 'board') return boardSheet();
+      if (g === 'profile') return profileSheet();
+      if (g === 'poll') return S.poll && H.sheet(pollCard());
+      if (g === 'ref') return H.sheet(refCard());
       if (g === 'share') return share();
       if (g === 'copy') return copyText(refLink()).then((ok) => { track('game_invite', { via: 'copy' }); H.toast(ok ? 'Ссылка скопирована' : refLink(), ok ? 2500 : 8000); });
       if (g === 'freeze') return H.sheet(`<div class="g-ach-big is-got"><span>❄️</span></div><h2 class="t-h1">Заморозки: ${S.profile.freezes}</h2><p class="t-lead">Если пропустите день, заморозка сработает сама и серия не сгорит. Одна заморозка — один пропущенный день. Получить: пригласить друга, который пройдёт первый урок. Максимум ${5}.</p><button class="btn" data-close>Понятно</button>`);
