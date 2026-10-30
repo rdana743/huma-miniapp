@@ -18,6 +18,9 @@
     check: '<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     lock: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>',
     star: '<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4L2.8 9.5l6.4-.8z"/></svg>',
+    snow: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M9 4l3 2 3-2M9 20l3-2 3 2M4.5 10.5l3.4-.3-1.4-3M19.5 13.5l-3.4.3 1.4 3M4.5 13.5l3.4.3-1.4 3M19.5 10.5l-3.4-.3 1.4-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    share: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
     close: '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
     left: '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     right: '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -85,7 +88,8 @@
       <div class="g-stats">
         <span class="g-chip ${p.playedToday ? 'is-hot' : ''}" title="Серия дней">${icon.flame}<b>${p.streak}</b></span>
         <span class="g-chip g-chip--xp" title="Опыт">${icon.bolt}<b>${fmt(p.xp)}</b></span>
-        <span class="g-chip g-chip--lv"><b>${esc(lv.title)}</b></span>
+        ${p.freezes ? `<button class="g-chip g-chip--ice" data-g="freeze" title="Заморозки серии">${icon.snow}<b>${p.freezes}</b></button>` : ''}
+        <button class="g-chip g-chip--lv" data-g="levels"><b>${esc(lv.title)}</b></button>
       </div>
 
       <section class="g-hero on-dark">
@@ -137,6 +141,8 @@
         }).join('')}
       </div>
 
+      ${refCard()}
+
       <section class="g-card">
         <div class="h-row"><h2 class="t-h2">Топ недели</h2><span class="t-small">сброс в понедельник</span></div>
         ${S.board.top.length
@@ -159,6 +165,74 @@
       <button class="g-switch" data-g="tracks">Путь: <b>${esc(p.trackTitle)}</b> · сменить</button>
     `);
     bind();
+  }
+
+  // ---------- пригласи друга ----------
+  const refLink = () => {
+    const code = S.referral?.code;
+    if (!code) return '';
+    return H.platform === 'tg' ? `https://t.me/${H.C.tgBotUsername}?start=ref_${code}` : `https://max.ru/${H.C.botUsername}?start=ref_${code}`;
+  };
+
+  function refCard() {
+    const r = S.referral;
+    if (!r?.code) return '';
+    return `
+      <section class="g-card g-ref">
+        <div class="g-ref__top">
+          <div>
+            <span class="g-tag g-tag--red">Пригласи друга</span>
+            <h2 class="t-h2">Играйте вместе</h2>
+            <p class="g-ref__lead">Друг проходит первый урок — вам <b>+${r.reward.referrer} опыта и ❄️ заморозка</b> серии, другу — <b>+${r.reward.friend} опыта</b> на старте.</p>
+          </div>
+          <img class="float" src="img/social.webp" alt="" />
+        </div>
+        <div class="g-ref__link"><span>${esc(refLink().replace('https://', ''))}</span></div>
+        <div class="g-ref__btns">
+          <button class="btn btn--red" data-g="share">${icon.share}Пригласить</button>
+          <button class="btn btn--line" data-g="copy">${icon.copy}Скопировать</button>
+        </div>
+        <div class="g-ref__stats">
+          <span><b>${r.joined}</b>${plural(r.joined, 'пришёл', 'пришли', 'пришли')} по ссылке</span>
+          <span><b>${r.active}</b>${plural(r.active, 'прошёл', 'прошли', 'прошли')} первый урок</span>
+        </div>
+        ${r.friends.length ? `<div class="g-ref__friends">${r.friends.map((f) => `<span class="${f.active ? 'is-on' : ''}" title="${f.active ? 'Прошёл первый урок' : 'Ещё не прошёл урок'}">${esc(f.name)}${f.active ? ' ✓' : ''}</span>`).join('')}</div>` : ''}
+      </section>`;
+  }
+
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+    try {
+      const t = document.createElement('textarea');
+      t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok;
+    } catch { return false; }
+  }
+
+  async function share() {
+    const link = refLink();
+    const text = 'Залипаю в игру по маркетингу от HUMA: уроки на 2 минуты, опыт и топ недели. Давай наперегонки — по ссылке тебе +50 опыта на старте';
+    track('game_invite', { via: 'share' });
+    if (H.platform === 'tg') return H.open(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
+    if (navigator.share) { try { await navigator.share({ text: `${text}\n${link}` }); return; } catch {} }
+    if (await copyText(`${text}\n${link}`)) H.toast('Ссылка скопирована — отправьте её другу');
+    else H.toast(link, 8000);
+  }
+
+  function levelsSheet() {
+    const p = S.profile;
+    H.sheet(`
+      <h2 class="t-h1">Уровни</h2>
+      <p class="t-lead">${fmt(p.xp)} опыта. ${p.level.next ? `До «${esc(p.level.nextTitle)}» — ${fmt(p.level.next - p.xp)}` : 'Вы на вершине!'}</p>
+      <ol class="g-ladder">
+        ${S.levels.map((l, i) => {
+          const st = i < p.level.index ? 'is-done' : i === p.level.index ? 'is-now' : '';
+          return `<li class="${st}"><span class="g-ladder__n">${i < p.level.index ? '✓' : i + 1}</span><b>${esc(l.title)}</b><small>${fmt(l.xp)}</small></li>`;
+        }).join('')}
+      </ol>
+      <p class="t-small">Опыт дают уроки, опрос дня и друзья, которых вы пригласили.</p>
+      <button class="btn" data-close>Понятно</button>`);
+    setTimeout(() => document.querySelector('.g-ladder .is-now')?.scrollIntoView({ block: 'center' }), 50);
   }
 
   // ---------- опрос дня ----------
@@ -238,6 +312,10 @@
       if (g === 'reload') return page();
       if (g === 'tracks') return renderTracks(true);
       if (g === 'home') return renderHome();
+      if (g === 'levels') return levelsSheet();
+      if (g === 'share') return share();
+      if (g === 'copy') return copyText(refLink()).then((ok) => { track('game_invite', { via: 'copy' }); H.toast(ok ? 'Ссылка скопирована' : refLink(), ok ? 2500 : 8000); });
+      if (g === 'freeze') return H.sheet(`<div class="g-ach-big is-got"><span>❄️</span></div><h2 class="t-h1">Заморозки: ${S.profile.freezes}</h2><p class="t-lead">Если пропустите день, заморозка сработает сама и серия не сгорит. Одна заморозка — один пропущенный день. Получить: пригласить друга, который пройдёт первый урок. Максимум ${5}.</p><button class="btn" data-close>Понятно</button>`);
     };
   }
 
@@ -476,17 +554,19 @@
         <h1 class="t-hero">${title}</h1>
         <p class="t-lead">${esc(lesson.title)}${r.replay ? ' · повтор урока даёт меньше опыта' : ''}</p>
         <div class="g-tiles">
-          <div class="g-tile g-tile--xp"><small>Опыт</small><b>${icon.bolt}<span data-count="${r.xp}">0</span></b></div>
+          <div class="g-tile g-tile--xp"><small>Опыт</small><b>${icon.bolt}<span data-count="${r.xp + (r.welcome || 0)}">0</span></b></div>
           <div class="g-tile"><small>Точность</small><b>${acc}%</b></div>
           <div class="g-tile"><small>Время</small><b>${time}</b></div>
         </div>
+        ${r.welcome ? `<div class="g-bonus">🤝 <span><b>+${r.welcome} опыта за приглашение</b><span>Вас позвал друг — ему тоже придёт награда</span></span></div>` : ''}
+        ${r.frozeUsed ? `<div class="g-bonus g-bonus--ice">❄️ <span><b>Заморозка спасла серию</b><span>Потрачено: ${r.frozeUsed}. Пригласите друга, чтобы получить ещё</span></span></div>` : ''}
         ${r.streakUp ? `<div class="g-streak-up">${icon.flame}<span><b>Серия ${r.streak} ${plural(r.streak, 'день', 'дня', 'дней')}!</b><span>${r.streak === 1 ? 'Возвращайтесь завтра, чтобы не потерять её' : 'Огонь горит. Завтра — ещё один урок'}</span></span></div>` : ''}
         ${r.levelUp ? `<div class="g-levelup"><span>Новый уровень</span><b>${esc(r.levelUp)}</b></div>` : ''}
         ${r.todayXp >= r.goal && r.todayXp - r.xp < r.goal ? '<div class="g-goal-done">🎯 Цель дня выполнена</div>' : ''}
         <button class="btn btn--red" data-out>Продолжить</button>
       </div>`;
     H.notify('success');
-    countUp(H.app.querySelector('[data-count]'), r.xp);
+    countUp(H.app.querySelector('[data-count]'), r.xp + (r.welcome || 0));
     H.app.querySelector('[data-out]').onclick = () => { leave(); };
     if (S?.profile) {
       S.profile.xp = r.totalXp;
