@@ -54,6 +54,7 @@
   function renderTracks(changing = false) {
     H.shell(`
       ${H.head()}
+      ${changing ? '' : inviteCard()}
       <div class="g-intro">
         <h1 class="t-h1">${changing ? 'Сменить путь' : 'Кто вы?'}</h1>
         <p class="t-lead">Подберём уроки под вашу роль. Путь можно сменить в любой момент, опыт сохранится.</p>
@@ -85,6 +86,7 @@
 
     H.shell(`
       ${H.head()}
+      ${inviteCard()}
       <div class="g-stats">
         <span class="g-chip ${p.playedToday ? 'is-hot' : ''}" title="Серия дней">${icon.flame}<b>${p.streak}</b></span>
         <span class="g-chip g-chip--xp" title="Опыт">${icon.bolt}<b>${fmt(p.xp)}</b></span>
@@ -121,6 +123,7 @@
             <header class="g-unit__head">
               <img src="${u.img}" alt="" />
               <span><span class="t-small">Раздел ${ui + 1} · ${doneN} из ${u.lessons.length}</span><b>${esc(u.title)}</b><span class="g-unit__desc">${esc(u.desc)}</span></span>
+              ${u.complete && S.referral?.code ? `<button class="g-unit__cert" data-cert="${u.id}" aria-label="Сертификат">🎓</button>` : ''}
             </header>
             <div class="g-nodes">
               ${u.lessons.map((l, i) => {
@@ -140,6 +143,8 @@
           </section>`;
         }).join('')}
       </div>
+
+      ${duelCard()}
 
       ${refCard()}
 
@@ -165,6 +170,170 @@
       <button class="g-switch" data-g="tracks">Путь: <b>${esc(p.trackTitle)}</b> · сменить</button>
     `);
     bind();
+  }
+
+  // ---------- ссылки на бота ----------
+  const botLink = (payload) => (H.platform === 'tg' ? `https://t.me/${H.C.tgBotUsername}?start=${payload}` : `https://max.ru/${H.C.botUsername}?start=${payload}`);
+  const mmss = (ms) => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+  async function shareLink(link, text, event) {
+    track(event.name, event.props || {});
+    if (H.platform === 'tg') return H.open(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
+    if (navigator.share) { try { await navigator.share({ text: `${text}\n${link}` }); return; } catch {} }
+    if (await copyText(`${text}\n${link}`)) H.toast('Скопировано — отправьте коллеге');
+    else H.toast(link, 8000);
+  }
+
+  // ---------- дуэли ----------
+  function inviteCard() {
+    const inv = S.duels?.invite;
+    if (!inv) return '';
+    return `
+      <section class="g-duel-invite">
+        <span class="g-duel-invite__swords">⚔️</span>
+        <div>
+          <span class="g-tag g-tag--red">Вызов на дуэль</span>
+          <h2 class="t-h2">${esc(inv.from)} вызывает вас</h2>
+          <p>${inv.correct}/${inv.size} верных за ${mmss(inv.ms)}. Сможете лучше? Победителю +50 опыта.</p>
+        </div>
+        <button class="btn btn--red btn--shine" data-duel-accept="${inv.code}">Принять вызов</button>
+      </section>`;
+  }
+
+  function duelCard() {
+    const list = S.duels?.list || [];
+    const label = { win: 'победа', lose: 'поражение', draw: 'ничья', waiting: 'ждём соперника' };
+    return `
+      <section class="g-card g-duel">
+        <div class="g-ref__top">
+          <div>
+            <span class="g-tag">Дуэль</span>
+            <h2 class="t-h2">Вызовите коллегу</h2>
+            <p class="g-ref__lead">5 одинаковых вопросов. Кто ответит лучше и быстрее — получит <b>+50 опыта</b>, проигравший — +20.</p>
+          </div>
+          <span class="g-duel__swords" aria-hidden="true">⚔️</span>
+        </div>
+        <button class="btn" data-g="duel">Сыграть и вызвать</button>
+        ${list.length ? `<ul class="g-duels">${list.map((d) => `
+          <li class="is-${d.result}">
+            <span>${d.rival ? esc(d.rival) : 'Соперник ещё не принял'}</span>
+            <b>${d.my}${d.their !== null ? ` : ${d.their}` : ` / ${d.size}`}</b>
+            <small>${label[d.result]}</small>
+            ${d.result === 'waiting' ? `<button class="g-duels__share" data-duel-share="${d.code}" data-duel-score="${d.my}">Отправить</button>` : ''}
+          </li>`).join('')}</ul>` : ''}
+      </section>`;
+  }
+
+  async function duelStart() {
+    haptic('medium');
+    try {
+      const d = await call('duel_create');
+      track('game_duel_create');
+      beginRound({ duel: { code: d.code, role: 'creator' }, title: 'Дуэль', questions: d.questions });
+    } catch (e) { H.toast(e.message); }
+  }
+
+  async function duelAccept(code) {
+    haptic('medium');
+    try {
+      const d = await call('duel_open', { code });
+      if (!d.canPlay) {
+        H.toast(d.mine ? 'Это ваша дуэль — отправьте ссылку коллеге' : 'В эту дуэль уже сыграли — создайте свою');
+        if (S?.duels) S.duels.invite = null;
+        return H.showTab('game');
+      }
+      track('game_duel_accept');
+      beginRound({ duel: { code, role: 'opponent', from: d.from, them: { correct: d.creatorCorrect, ms: d.creatorMs } }, title: `Дуэль с ${d.from}`, questions: d.questions });
+    } catch (e) { H.toast(e.message); }
+  }
+
+  function beginRound({ duel, title, questions }) {
+    L = { id: null, duel, title, queue: questions.slice(), total: questions.length, done: 0, correct: 0, mistakes: new Set(), combo: 0, best: 0, started: Date.now() };
+    window.scrollTo(0, 0);
+    document.body.classList.add('g-lesson-on');
+    clearInterval(timerId);
+    timerId = setInterval(() => { const t = document.querySelector('[data-duel-timer]'); if (t && L) t.textContent = mmss(Date.now() - L.started); }, 500);
+    showQuestion();
+  }
+  let timerId = null;
+
+  async function duelFinish() {
+    clearInterval(timerId);
+    const ms = Date.now() - L.started;
+    const round = L;
+    H.app.innerHTML = `<div class="g-lesson g-result"><div class="g-result__load"><span class="g-spin"></span><p>Подводим итог…</p></div></div>`;
+    let r;
+    try {
+      r = await call('duel_submit', { code: round.duel.code, correct: round.correct, ms });
+    } catch (e) {
+      H.app.innerHTML = `<div class="g-lesson g-result"><h2 class="t-h1">Не получилось</h2><p class="t-lead">${esc(e.message)}</p><button class="btn" data-out>Назад</button></div>`;
+      H.app.querySelector('[data-out]').onclick = leave;
+      return;
+    }
+    if (r.role === 'creator') {
+      const link = botLink(`duel_${r.code}`);
+      H.app.innerHTML = `
+        <div class="g-lesson g-result">
+          <div class="g-duel-big">⚔️</div>
+          <h1 class="t-hero">Вызов готов</h1>
+          <p class="t-lead">Ваш результат — <b>${r.correct}/${round.total}</b> за <b>${mmss(r.ms)}</b>. Отправьте ссылку коллеге: когда он сыграет, бот пришлёт итог.</p>
+          <div class="g-ref__link" style="width:100%"><span>${esc(link.replace('https://', ''))}</span></div>
+          <button class="btn btn--red" data-send>${icon.share}Отправить вызов</button>
+          <button class="btn btn--line" data-copy>${icon.copy}Скопировать ссылку</button>
+          <button class="g-switch" data-out>Вернуться в игру</button>
+        </div>`;
+      const text = `Вызываю на дуэль по маркетингу: я ответил на ${r.correct} из ${round.total} за ${mmss(r.ms)}. Сможешь лучше?`;
+      H.app.querySelector('[data-send]').onclick = () => shareLink(link, text, { name: 'game_invite', props: { via: 'duel' } });
+      H.app.querySelector('[data-copy]').onclick = () => copyText(link).then((ok) => H.toast(ok ? 'Ссылка скопирована' : link, ok ? 2500 : 8000));
+      H.app.querySelector('[data-out]').onclick = leave;
+      return;
+    }
+    const titles = { win: 'Победа!', lose: 'Почти!', draw: 'Ничья!' };
+    H.notify(r.result === 'lose' ? 'warning' : 'success');
+    H.app.innerHTML = `
+      <div class="g-lesson g-result">
+        ${r.result === 'win' ? confetti() : ''}
+        <div class="g-duel-big">${r.result === 'win' ? '🏆' : r.result === 'draw' ? '🤝' : '⚔️'}</div>
+        <h1 class="t-hero">${titles[r.result]}</h1>
+        <div class="g-versus">
+          <div class="${r.result === 'win' ? 'is-win' : ''}"><small>Вы</small><b>${r.you.correct}/${round.total}</b><span>${mmss(r.you.ms)}</span></div>
+          <i>vs</i>
+          <div class="${r.result === 'lose' ? 'is-win' : ''}"><small>${esc(r.from)}</small><b>${r.them.correct}/${round.total}</b><span>${mmss(r.them.ms)}</span></div>
+        </div>
+        <div class="g-tiles" style="grid-template-columns:1fr"><div class="g-tile g-tile--xp"><small>Опыт</small><b>${icon.bolt}<span data-count="${r.xp}">0</span></b></div></div>
+        <button class="btn btn--red" data-revenge>${r.result === 'lose' ? 'Реванш: вызвать самому' : 'Вызвать кого-то ещё'}</button>
+        <button class="g-switch" data-out>Вернуться в игру</button>
+      </div>`;
+    countUp(H.app.querySelector('[data-count]'), r.xp);
+    H.app.querySelector('[data-revenge]').onclick = () => { L = null; duelStart(); };
+    H.app.querySelector('[data-out]').onclick = leave;
+    await sleep(800);
+    showAchievements(r.achievements);
+  }
+
+  // ---------- сертификаты ----------
+  const certUrl = (unitId) => `${H.C.apiBase}/game/cert?c=${S.referral?.code}&u=${unitId}`;
+
+  function certSheet(unitId) {
+    const u = S.units.find((x) => x.id === unitId);
+    if (!u || !S.referral?.code) return;
+    const url = certUrl(unitId);
+    track('game_cert', { unit: unitId });
+    const tg = H.tg;
+    H.sheet(`
+      <h2 class="t-h1">Сертификат</h2>
+      <p class="t-lead">Раздел «${esc(u.title)}» пройден. Поделитесь — пусть коллеги видят.</p>
+      <div class="g-cert"><span class="g-spin"></span><img src="${url}" alt="Сертификат ${esc(u.title)}" onload="this.previousElementSibling.remove()" /></div>
+      ${tg?.shareToStory ? '<button class="btn btn--red" data-cert-story>Выложить в сторис</button>' : ''}
+      <button class="btn ${tg?.shareToStory ? 'btn--line' : 'btn--red'}" data-cert-get>${tg?.downloadFile ? 'Скачать картинку' : 'Открыть картинку'}</button>`);
+    const el = H.sheetEl;
+    el.querySelector('[data-cert-story]')?.addEventListener('click', () => {
+      try { tg.shareToStory(url, { text: `Прошёл раздел «${u.title}» в игре HUMA 🎓`, widget_link: { url: botLink('cert'), name: 'Играть' } }); } catch { H.open(url); }
+    });
+    el.querySelector('[data-cert-get]').addEventListener('click', () => {
+      if (tg?.downloadFile) { try { return tg.downloadFile({ url, file_name: `HUMA-${unitId}.png` }); } catch {} }
+      H.open(url);
+    });
   }
 
   // ---------- пригласи друга ----------
@@ -298,10 +467,13 @@
   // ---------- события ----------
   function bind() {
     H.app.onclick = (e) => {
-      const t = e.target.closest('[data-track],[data-lesson],[data-g],[data-vote],[data-pollview],[data-ach],[data-tab]');
+      const t = e.target.closest('[data-track],[data-lesson],[data-g],[data-vote],[data-pollview],[data-ach],[data-tab],[data-duel-accept],[data-duel-share],[data-cert]');
       if (!t) return;
       if (t.dataset.tab) { haptic(); return H.showTab(t.dataset.tab); }
       if (t.dataset.track) return chooseTrack(t.dataset.track);
+      if (t.dataset.duelAccept) return duelAccept(t.dataset.duelAccept);
+      if (t.dataset.duelShare) return shareLink(botLink(`duel_${t.dataset.duelShare}`), `Вызываю на дуэль по маркетингу: у меня ${t.dataset.duelScore} из 5. Сможешь лучше?`, { name: 'game_invite', props: { via: 'duel' } });
+      if (t.dataset.cert) return certSheet(t.dataset.cert);
       if (t.dataset.lesson && !t.disabled) return startLesson(t.dataset.lesson);
       if (t.dataset.vote !== undefined) return vote(Number(t.dataset.vote));
       if (t.dataset.pollview) { pollMine = t.dataset.pollview === 'mine'; return renderHome(); }
@@ -314,6 +486,7 @@
       if (g === 'tracks') return renderTracks(true);
       if (g === 'home') return renderHome();
       if (g === 'levels') return levelsSheet();
+      if (g === 'duel') return duelStart();
       if (g === 'share') return share();
       if (g === 'copy') return copyText(refLink()).then((ok) => { track('game_invite', { via: 'copy' }); H.toast(ok ? 'Ссылка скопирована' : refLink(), ok ? 2500 : 8000); });
       if (g === 'freeze') return H.sheet(`<div class="g-ach-big is-got"><span>❄️</span></div><h2 class="t-h1">Заморозки: ${S.profile.freezes}</h2><p class="t-lead">Если пропустите день, заморозка сработает сама и серия не сгорит. Одна заморозка — один пропущенный день. Получить: пригласить друга, который пройдёт первый урок. Максимум ${5}.</p><button class="btn" data-close>Понятно</button>`);
@@ -349,13 +522,14 @@
   }
 
   function exitLesson() {
-    H.sheet(`<h2 class="t-h1">Выйти из урока?</h2><p class="t-lead">Прогресс этого урока не сохранится.</p>
+    H.sheet(`<h2 class="t-h1">${L?.duel ? 'Выйти из дуэли?' : 'Выйти из урока?'}</h2><p class="t-lead">${L?.duel ? 'Результат не сохранится.' : 'Прогресс этого урока не сохранится.'}</p>
       <button class="btn btn--red" data-g-exit>Выйти</button><button class="btn btn--line" data-close>Продолжить урок</button>`);
     H.sheetEl.querySelector('[data-g-exit]').onclick = () => { H.sheetEl.hidden = true; leave(); };
   }
 
   function leave() {
     L = null;
+    clearInterval(timerId);
     document.body.classList.remove('g-lesson-on');
     H.showTab('game');
   }
@@ -367,7 +541,7 @@
         <header class="g-lesson__top">
           <button class="g-x" data-x aria-label="Выйти">${icon.close}</button>
           <div class="g-bar g-bar--lesson"><i style="width:${pct}%"></i></div>
-          <span class="g-combo ${L.combo >= 3 ? 'is-on' : ''}">${icon.flame}${L.combo}</span>
+          ${L.duel ? `<span class="g-timer" data-duel-timer>${mmss(Date.now() - L.started)}</span>` : `<span class="g-combo ${L.combo >= 3 ? 'is-on' : ''}">${icon.flame}${L.combo}</span>`}
         </header>
         <main class="g-lesson__body">${body}</main>
         <footer class="g-lesson__foot">${footer}</footer>
@@ -381,7 +555,7 @@
 
   function showQuestion() {
     const q = L.queue[0];
-    if (!q) return finish();
+    if (!q) return L.duel ? duelFinish() : finish();
     const retry = L.mistakes.has(q.id);
     const tag = { quiz: 'Выберите ответ', swipe: 'Да или нет?', spot: 'Найдите ошибку', calc: 'Посчитайте' }[q.type];
     const head = `<p class="g-q__tag">${retry ? '<span class="g-retry">Ещё раз</span>' : ''}${tag}</p><h2 class="g-q">${esc(q.q)}</h2>`;
@@ -502,6 +676,16 @@
       L.best = Math.max(L.best, L.combo);
       H.notify('success');
       picked?.classList.add('is-right');
+    } else if (L.duel) {
+      // В дуэли ошибку не переигрываем — идём дальше
+      L.mistakes.add(q.id);
+      L.queue.shift();
+      L.done++;
+      L.combo = 0;
+      H.notify('error');
+      picked?.classList.add('is-wrong');
+      if (q.type === 'quiz') H.app.querySelector(`.g-choice[data-i="${q.a}"]`)?.classList.add('is-answer');
+      reveal?.();
     } else {
       L.mistakes.add(q.id);
       L.combo = 0;
@@ -524,6 +708,12 @@
     if (bar) bar.style.width = `${Math.round((L.done / L.total) * 100)}%`;
     const combo = H.app.querySelector('.g-combo');
     if (combo) { combo.innerHTML = `${icon.flame}${L.combo}`; combo.classList.toggle('is-on', L.combo >= 3); }
+    if (L.duel) {
+      // В дуэли без разборов: короткий сигнал и следующий вопрос, время идёт
+      fb.innerHTML = `<div class="g-feedback__head">${ok ? icon.check : icon.close}<b>${ok ? 'Верно' : `Неверно · ${esc(rightText)}`}</b></div>`;
+      setTimeout(() => L && showQuestion(), ok ? 650 : 1300);
+      return;
+    }
     fb.querySelector('[data-next]').onclick = () => { haptic(); showQuestion(); };
     fb.querySelector('[data-next]').focus({ preventScroll: true });
   }
@@ -604,6 +794,26 @@
       <h2 class="t-h1">${list.length > 1 ? 'Новые достижения!' : 'Новое достижение!'}</h2>
       <button class="btn" data-close>Забрать</button>`);
   }
+
+  // Пришёл по ссылке дуэли — предлагаем сыграть сразу, даже если человек на другой вкладке
+  async function checkInvite() {
+    if (!H.inMessenger) return;
+    try {
+      const r = await call('invite');
+      const inv = r?.invite;
+      if (!inv || store.get('duelSeen', '') === inv.code || L) return;
+      store.set('duelSeen', inv.code);
+      H.sheet(`<div class="g-duel-big">⚔️</div><h2 class="t-h1">${esc(inv.from)} вызывает вас на дуэль</h2>
+        <p class="t-lead">5 вопросов по маркетингу на скорость. Результат соперника: ${inv.correct}/${inv.size} за ${mmss(inv.ms)}. Победителю +50 опыта.</p>
+        <button class="btn btn--red btn--shine" data-g-acc>Принять вызов</button><button class="btn btn--line" data-close>Позже</button>`);
+      H.sheetEl.querySelector('[data-g-acc]').onclick = () => {
+        H.sheetEl.hidden = true;
+        store.set('onboarded', true);
+        duelAccept(inv.code);
+      };
+    } catch {}
+  }
+  setTimeout(checkInvite, 1200);
 
   window.HUMA_GAME = { page };
 })();

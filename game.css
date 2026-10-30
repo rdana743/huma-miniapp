@@ -281,3 +281,34 @@ button.g-chip { cursor: pointer; }
 .g-stats { min-width: 0; }
 .g-chip--lv { min-width: 0; max-width: 46%; }
 .g-chip--lv b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- дуэли и сертификаты ---------- */
+.g-duel { background: linear-gradient(160deg, #fff 0%, #f1f1f1 100%); box-shadow: inset 0 0 0 2px var(--grey-1); }
+.g-duel__swords { font-size: 64px; text-align: center; animation: float 4s ease-in-out infinite; }
+.g-duels { list-style: none; padding: 0; display: grid; gap: 6px; }
+.g-duels li { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name score" "res share"; gap: 2px 10px; padding: 10px 12px; border-radius: 12px; background: #fff; }
+.g-duels li span { grid-area: name; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.g-duels li b { grid-area: score; font: 600 18px/1 var(--display); }
+.g-duels li small { grid-area: res; font-size: 12px; color: var(--grey-2); }
+.g-duels li.is-win small { color: var(--ok); font-weight: 600; }
+.g-duels li.is-lose small { color: var(--red-dark); }
+.g-duels__share { grid-area: share; justify-self: end; font-size: 13px; font-weight: 600; color: var(--red); }
+.g-duel-invite { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px 12px; padding: 18px; border-radius: var(--r-lg); background: var(--night); color: #fff; box-shadow: 0 0 0 2px var(--red), 0 14px 30px rgba(249,4,2,.25); animation: pop .5s var(--spring) both; }
+.g-duel-invite__swords { font-size: 44px; align-self: start; }
+.g-duel-invite .t-h2 { margin: 8px 0 4px; }
+.g-duel-invite p { font-size: 14px; color: #cfcfcf; }
+.g-duel-invite .btn { grid-column: 1 / -1; }
+.g-duel-big { font-size: 96px; line-height: 1; animation: pop .6s var(--spring) both; }
+.g-timer { min-width: 52px; text-align: right; font: 700 16px/1 var(--text); font-variant-numeric: tabular-nums; color: var(--red); }
+.g-versus { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; width: 100%; }
+.g-versus > div { display: grid; gap: 4px; padding: 14px 10px; border-radius: 18px; border: 2px solid var(--grey-1); }
+.g-versus > div.is-win { border-color: var(--red); background: var(--bad-bg); }
+.g-versus small { font-size: 12px; color: var(--grey-2); text-transform: uppercase; letter-spacing: .06em; }
+.g-versus b { font: 600 34px/1 var(--display); }
+.g-versus span { font-size: 13px; color: var(--grey-3); }
+.g-versus i { font: 600 18px/1 var(--display); color: var(--grey-2); font-style: normal; text-transform: uppercase; }
+.g-unit__head { position: relative; }
+.g-unit__cert { margin-left: auto; flex: none; width: 46px; height: 46px; border-radius: 14px; background: var(--red); font-size: 24px; display: grid; place-items: center; animation: pop .5s var(--spring) both; box-shadow: 0 6px 16px rgba(249,4,2,.35); }
+.g-cert { position: relative; display: grid; place-items: center; min-height: 240px; border-radius: 18px; background: var(--night); overflow: hidden; }
+.g-cert img { width: 100%; max-height: 52dvh; object-fit: contain; }
+.g-cert .g-spin { position: absolute; }

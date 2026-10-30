@@ -635,7 +635,7 @@
     C, shell, head, api, track, flush, haptic, esc, sheet, toast, store, open, botLink, reduced, ic,
     get tab() { return tab; },
     showTab, go, app: $app, sheetEl: $sheet,
-    user: waUser, firstName, inMessenger: !!waUser, platform,
+    user: waUser, firstName, inMessenger: !!waUser, platform, tg: TG,
     notify(kind) { try { WA?.HapticFeedback?.notificationOccurred?.(kind); } catch {} },
   };
 
