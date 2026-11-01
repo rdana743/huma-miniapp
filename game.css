@@ -312,6 +312,7 @@ button.g-chip { cursor: pointer; }
 .g-cert { position: relative; display: grid; place-items: center; min-height: 240px; border-radius: 18px; background: var(--night); overflow: hidden; }
 .g-cert img { width: 100%; max-height: 52dvh; object-fit: contain; }
 .g-cert .g-spin { position: absolute; }
+.g-link { display: block; width: 100%; padding: 10px; font-size: 14px; color: var(--grey-3); text-align: center; text-decoration: underline; text-underline-offset: 3px; }
 
 /* ---------- главный экран «Сегодня» + плитки ---------- */
 .g-top { display: flex; align-items: center; gap: 8px; margin-top: -2px; }

@@ -424,20 +424,61 @@
     track('game_cert', { unit: unitId });
     store.set('certSeen', [...new Set([...store.get('certSeen', []), unitId])]);
     const tg = H.tg;
+    const max = H.platform === 'max' ? window.WebApp : null;
+    const fileName = `HUMA-${unitId}.png`;
+    const text = `Прошёл раздел «${u.title}» в игре HUMA 🎓`;
+    const tgAt = (v) => { try { return !!tg?.isVersionAtLeast?.(v); } catch { return false; } };
+
+    // Сторис: в Telegram — родные сторис; в MAX сторис для мини-приложений нет,
+    // поэтому открываем системное «Поделиться» с картинкой (оттуда — в сторис Instagram/VK/Telegram)
+    const canTgStory = !!tg?.shareToStory && tgAt('7.8');
+    const canFileShare = !!navigator.canShare && navigator.canShare({ files: [new File([''], fileName, { type: 'image/png' })] });
+    const canShare = canTgStory || canFileShare || !!max?.shareContent;
+    const canDownload = (!!tg?.downloadFile && tgAt('8.0')) || !!max?.downloadFile;
+
     H.sheet(`
       <h2 class="t-h1">Сертификат</h2>
       <p class="t-lead">Раздел «${esc(u.title)}» пройден. Поделитесь — пусть коллеги видят.</p>
       <div class="g-cert"><span class="g-spin"></span><img src="${url}" alt="Сертификат ${esc(u.title)}" onload="this.previousElementSibling.remove()" /></div>
-      ${tg?.shareToStory ? '<button class="btn btn--red" data-cert-story>Выложить в сторис</button>' : ''}
-      <button class="btn ${tg?.shareToStory ? 'btn--line' : 'btn--red'}" data-cert-get>${tg?.downloadFile ? 'Скачать картинку' : 'Открыть картинку'}</button>`);
+      ${canShare ? `<button class="btn btn--red" data-cert-story>${canTgStory ? 'Выложить в сторис' : 'Поделиться в сторис'}</button>` : ''}
+      <button class="btn ${canShare ? 'btn--line' : 'btn--red'}" data-cert-get>Скачать картинку</button>
+      <button class="g-link" data-cert-open>Открыть картинку</button>`);
     const el = H.sheetEl;
-    el.querySelector('[data-cert-story]')?.addEventListener('click', () => {
-      try { tg.shareToStory(url, { text: `Прошёл раздел «${u.title}» в игре HUMA 🎓`, widget_link: { url: botLink('cert'), name: 'Играть' } }); } catch { H.open(url); }
+
+    let blob = null; // картинку для «Поделиться» грузим заранее: share() должен вызываться сразу по клику
+    if (!canTgStory && canFileShare) fetch(url).then((r) => r.blob()).then((b) => { blob = b; }).catch(() => {});
+
+    el.querySelector('[data-cert-story]')?.addEventListener('click', async () => {
+      track('game_cert_share', { unit: unitId, via: canTgStory ? 'tg_story' : 'share' });
+      if (canTgStory) {
+        const opts = { text };
+        if (H.user?.is_premium) opts.widget_link = { url: botLink('cert'), name: 'Играть' }; // ссылки в сторис — только у Premium
+        try { return tg.shareToStory(url, opts); } catch {}
+      }
+      if (canFileShare && blob) {
+        try { return await navigator.share({ files: [new File([blob], fileName, { type: 'image/png' })], text }); } catch (e) { if (e?.name === 'AbortError') return; }
+      }
+      if (max?.shareContent) { try { return await max.shareContent({ text, link: url }); } catch {} }
+      H.toast('Скачайте картинку и выложите её в сторис');
     });
-    el.querySelector('[data-cert-get]').addEventListener('click', () => {
-      if (tg?.downloadFile) { try { return tg.downloadFile({ url, file_name: `HUMA-${unitId}.png` }); } catch {} }
+
+    el.querySelector('[data-cert-get]').addEventListener('click', async () => {
+      track('game_cert_download', { unit: unitId });
+      try {
+        if (tg?.downloadFile && tgAt('8.0')) return tg.downloadFile({ url, file_name: fileName });
+        if (max?.downloadFile) return await max.downloadFile(url, fileName);
+      } catch {}
+      // Обычный браузер или старая версия мессенджера: сохраняем через ссылку, иначе открываем
+      try {
+        const b = blob || (await (await fetch(url)).blob());
+        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(b), download: fileName });
+        document.body.append(a); a.click(); a.remove();
+        if (!H.inMessenger) return;
+      } catch {}
       H.open(url);
     });
+
+    el.querySelector('[data-cert-open]').addEventListener('click', () => H.open(url));
   }
 
   // ---------- пригласи друга ----------
