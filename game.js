@@ -148,7 +148,7 @@
     }
     if (p.streak && !p.playedToday) cards.push(`<button class="g-lc g-lc--fire" data-lesson="${nextLesson()?.id || ''}"><span class="g-lc__e">🔥</span><b>Серия ${p.streak} ${plural(p.streak, 'день', 'дня', 'дней')} под угрозой</b><small>Один урок — 2 минуты</small><span class="g-lc__btn">Спасти</span></button>`);
     if (S.poll && (S.poll.voted === null || S.poll.voted === undefined)) cards.push(`<button class="g-lc" data-g="poll"><span class="g-lc__e">📊</span><b>Опрос дня</b><small>${esc(S.poll.question)}</small><span class="g-lc__btn">Ответить · +15⚡</span></button>`);
-    const cert = S.units.find((u) => u.complete && !store.get('certSeen', []).includes(u.id));
+    const cert = S.units.find((u) => (u.cert ?? u.complete) && !store.get('certSeen', []).includes(u.id));
     if (cert && S.referral?.code) cards.push(`<button class="g-lc" data-cert="${cert.id}"><span class="g-lc__e">🎓</span><b>Сертификат готов</b><small>«${esc(cert.title)}» — для сторис</small><span class="g-lc__btn">Открыть</span></button>`);
     if (!(S.duels?.list || []).length) cards.push(`<button class="g-lc" data-g="duel"><span class="g-lc__e">⚔️</span><b>Вызовите коллегу</b><small>5 вопросов на скорость, победителю +50⚡</small><span class="g-lc__btn">Сыграть</span></button>`);
     if (S.referral?.code) cards.push(`<button class="g-lc" data-g="ref"><span class="g-lc__e">🎁</span><b>Позовите друга</b><small>+${S.referral.reward.referrer}⚡ и заморозка серии</small><span class="g-lc__btn">Пригласить</span></button>`);
@@ -229,11 +229,11 @@
           </div>`;
         }).join('')}
       </div>
-      ${u.complete && S.referral?.code
+      ${(u.cert ?? u.complete) && S.referral?.code
         ? `<button class="btn btn--red" data-cert="${u.id}">🎓 Сертификат за раздел</button>`
         : u.lessons.every((l) => l.locked)
           ? `<div class="g-hint">🔒 Откроется после раздела «${esc(prevUnit?.title || '')}»</div>`
-          : `<div class="g-hint">🎓 Пройдите все ${u.lessons.length} урока — получите сертификат для сторис</div>`}
+          : `<div class="g-hint">🎓 Пройдите все ${u.lessons.length} ${plural(u.lessons.length, 'урок', 'урока', 'уроков')} — получите сертификат для сторис</div>`}
       ${S.units[ui + 1] ? `<button class="g-nextunit" data-unit="${S.units[ui + 1].id}"><span>Следующий раздел</span><b>${esc(S.units[ui + 1].title)}</b>${icon.right}</button>` : ''}
     `);
     window.scrollTo(0, 0);
@@ -255,7 +255,7 @@
   function profileSheet() {
     store.set('achSeen', gotAch());
     const p = S.profile;
-    const certs = S.units.filter((u) => u.complete);
+    const certs = S.units.filter((u) => u.cert ?? u.complete);
     H.sheet(`
       <h2 class="t-h1">Уровень и награды</h2>
       <button class="g-lvcard" data-g="levels">
